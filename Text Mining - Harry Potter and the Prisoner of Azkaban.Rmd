@@ -1,0 +1,163 @@
+---
+title: "Text Mining - Harry Potter and the Prisoner of Azkaban"
+output: html_document
+date: "2025-04-05"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+**Potential Problems with the Script and Solutions**
+
+**Problem:**
+
+Mixed Narrative and Dialogue - The script contains scene descriptions (e.g., "The street slumbers") alongside dialogue (e.g., "Lumos Maxima"), which could complicate isolating dialogue or sentiment.
+
+**Solution:** Use text patterns (e.g., character names in all caps followed by lines) to separate dialogue from narrative.
+
+**Problem:** Limited Context - Scripts are shorter and less descriptive than books, potentially skewing sentiment or n-gram results due to fewer words.
+
+**Solution:** Normalize results (e.g., frequencies per 1000 words) to account for length differences.
+
+**Problem:** Stage Directions - Actions like "The tent BLOOMS SOFTLY" may interfere with word frequency or sentiment analysis if not filtered out.
+
+**Solution:** Preprocess to exclude text within parentheses or italicized directions (if formatted consistently).
+
+**Problem:** Character Identification - While your script labels speakers (e.g., "HARRY"), mentions of characters within dialogue or narrative may be harder to extract accurately.
+
+**Solution:** Use named entity recognition (NER) or manual tagging to identify character mentions.
+
+## Libraries
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(dplyr)
+library(readr)
+library(tm)
+library(textstem)
+library(udpipe)
+library(stopwords)
+
+```
+
+
+## Reading the book and script
+
+```{r}
+azkaban_book <- read_file("data/azkaban_book.txt")
+
+azkaban_script <- read_file("data/azkaban_script.txt")
+
+```
+
+**For a comprehensive stopword removing**
+
+```{r message=FALSE, warning=FALSE}
+ud_model <- udpipe_download_model(language = "english")
+ud_model <- udpipe_load_model(ud_model$file_model)
+```
+
+
+## Word Frequencies for Book and Script
+
+### Tokenizing, lemmatizing, and removing stopwords
+
+Tokenizing splits text into individual words or units, like turning "Harry runs fast" into "Harry", "runs", "fast". 
+
+Lemmatizing reduces words to their base form, so "runs" and "running" both become "run". 
+
+Removing stopwords filters out common words that don’t carry much meaning, like taking "the" and "is" out of "the spell is unmerciful" to leave "spell" and "unmerciful".
+
+
+#### The book
+
+```{r}
+tokens_azkaban_book <- udpipe_annotate(ud_model, x = azkaban_book) |> as.data.frame()
+stop_words_azkaban <- stopwords(source = "smart")
+clean_tokens_azkaban_book <- tokens_azkaban_book |>
+  filter(upos != "VERB",
+         upos != "PUNCT",
+         upos != "PRON",
+         !grepl("[[:punct:]]", lemma),
+         !lemma %in% stop_words_azkaban,
+         lemma != "") |>
+  pull(lemma)
+```
+
+
+#### The script
+
+```{r}
+tokens_azkaban_script <- udpipe_annotate(ud_model, x = azkaban_script) |> as.data.frame()
+stop_words_azkaban <- stopwords(source = "smart")
+clean_tokens_azkaban_script <- tokens_azkaban_script |>
+  filter(upos != "VERB",
+         upos != "PUNCT",
+         upos != "PRON",
+         !grepl("[[:punct:]]", lemma),
+         !lemma %in% stop_words_azkaban,
+         lemma != "") |>
+  pull(lemma)
+```
+
+### Word frequencies
+
+An interesting finding from at first glance is that in the book Hagrid is mentioned more than Professor Snape and Sirius Black. However, the script gave less mentions to Hagrid than those of Snape and Sirius Black.
+
+```{r}
+
+# for the book:
+
+word_freq_df_azkaban_book <- as.data.frame(table(clean_tokens_azkaban_book))
+colnames(word_freq_df_azkaban_book) <- c("Word", "Frequency")
+word_freq_df_azkaban_book <- word_freq_df_azkaban_book[order(-word_freq_df_azkaban_book$Frequency), ]
+print(head(word_freq_df_azkaban_book, 100))
+
+# for the script:
+
+word_freq_df_azkaban_script <- as.data.frame(table(clean_tokens_azkaban_script))
+colnames(word_freq_df_azkaban_script) <- c("Word", "Frequency")
+word_freq_df_azkaban_script <- word_freq_df_azkaban_script[order(-word_freq_df_azkaban_script$Frequency), ]
+print(head(word_freq_df_azkaban_script, 100))
+```
+
+### Word frequencies - but as percentages
+
+One thing we'd like to know is whether some characters are mentioned less in the script compared to the book. To do that, we should use a regularization.
+
+#### The book
+
+The book puts Harry, Ron, Hermione, Lupin, and even Hagrid, in the centre of the story in Azkaban, respectively. Professor Snape is also mentioned with a fair frequency, close to that of Hagrid. 
+
+
+```{r}
+total_tokens_azkaban_book <- length(clean_tokens_azkaban_book)
+word_freq_df_azkaban_book <- as.data.frame(table(clean_tokens_azkaban_book))
+colnames(word_freq_df_azkaban_book) <- c("Word", "Frequency")
+word_freq_df_azkaban_book$Percentage <- (word_freq_df_azkaban_book$Frequency / total_tokens_azkaban_book) * 100
+word_freq_df_azkaban_book <- word_freq_df_azkaban_book[order(-word_freq_df_azkaban_book$Percentage), ]
+print(head(word_freq_df_azkaban_book, 100))
+```
+
+
+#### The script
+
+The script, on the other hand, keeps Harry, Ron, and Hermione central to the story, but mentioning Hermione more than Ron this time. It also mentions the word 'black', which is the last name of Sirius, more frequent than the book. However, the word 'black' can be used in other contexts as well. Hagrid falls behind Snape in the frequency of mentions in the movie script, showing that the movie gives more emphasis to Snape than Hagrid. Last but not least, Lupin becomes even more important for the story with a greater mention frequency (from 1.2% in the book to 1.57% (Lupin + LUPIN combined). 
+
+```{r}
+total_tokens_azkaban_script <- length(clean_tokens_azkaban_script)
+word_freq_df_azkaban_script <- as.data.frame(table(clean_tokens_azkaban_script))
+colnames(word_freq_df_azkaban_script) <- c("Word", "Frequency")
+word_freq_df_azkaban_script$Percentage <- (word_freq_df_azkaban_script$Frequency / total_tokens_azkaban_script) * 100
+word_freq_df_azkaban_script <- word_freq_df_azkaban_script[order(-word_freq_df_azkaban_script$Percentage), ]
+print(head(word_freq_df_azkaban_script, 100))
+```
+
+
+
+Compare: List top words and their counts for both texts.
+
+
+
