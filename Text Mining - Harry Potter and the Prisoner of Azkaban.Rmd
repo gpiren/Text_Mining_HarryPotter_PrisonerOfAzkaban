@@ -39,7 +39,8 @@ library(tm)
 library(textstem)
 library(udpipe)
 library(stopwords)
-
+library(tidytext)
+library(ggplot2)
 ```
 
 
@@ -49,6 +50,12 @@ library(stopwords)
 azkaban_book <- read_file("data/azkaban_book.txt")
 
 azkaban_script <- read_file("data/azkaban_script.txt")
+
+# making the book a tibble
+azkaban_book <- tibble(text = azkaban_book)
+
+# split the script into lines and store as a tibble
+azkaban_script <- tibble(text = str_split(azkaban_script, pattern = "\n") |> unlist())
 
 ```
 
@@ -62,8 +69,6 @@ ud_model <- udpipe_load_model(ud_model$file_model)
 
 ## Word Frequencies for Book and Script
 
-### Tokenizing, lemmatizing, and removing stopwords
-
 Tokenizing splits text into individual words or units, like turning "Harry runs fast" into "Harry", "runs", "fast". 
 
 Lemmatizing reduces words to their base form, so "runs" and "running" both become "run". 
@@ -71,93 +76,160 @@ Lemmatizing reduces words to their base form, so "runs" and "running" both becom
 Removing stopwords filters out common words that don’t carry much meaning, like taking "the" and "is" out of "the spell is unmerciful" to leave "spell" and "unmerciful".
 
 
-#### The book
+### The book
+
+'udpipe_annotate' does tokenization + POS tagging + lemmatization.
+
+Part-of-speech (POS) tags: Identifying whether a word is a noun, verb, adjective, etc.
+
+Lemmatization: Converting words to their base form (e.g., "running" → "run").
+
 
 ```{r}
-tokens_azkaban_book <- udpipe_annotate(ud_model, x = azkaban_book) |> as.data.frame()
+
+# annotating text with POS tags and converting to dataframe
+tokens_azkaban_book <- udpipe_annotate(ud_model, x = azkaban_book$text) |> 
+  as.data.frame()
+
+# loading built-in stopwords list
 stop_words_azkaban <- stopwords(source = "smart")
+
+# clean tokens by filtering out verbs, punctuation, pronouns, stopwords, and empty lemmas
 clean_tokens_azkaban_book <- tokens_azkaban_book |>
-  filter(upos != "VERB",
-         upos != "PUNCT",
-         upos != "PRON",
-         !grepl("[[:punct:]]", lemma),
-         !lemma %in% stop_words_azkaban,
-         lemma != "") |>
-  pull(lemma)
+  filter(upos != "VERB",  
+         upos != "PUNCT",  
+         upos != "PRON",   
+         !grepl("[[:punct:]]", lemma),  
+         !lemma %in% stop_words_azkaban,  
+         lemma != "") |>  
+  pull(lemma)  
+
 ```
 
 
-#### The script
+#### Term Frequencies
 
-```{r}
-tokens_azkaban_script <- udpipe_annotate(ud_model, x = azkaban_script) |> as.data.frame()
-stop_words_azkaban <- stopwords(source = "smart")
-clean_tokens_azkaban_script <- tokens_azkaban_script |>
-  filter(upos != "VERB",
-         upos != "PUNCT",
-         upos != "PRON",
-         !grepl("[[:punct:]]", lemma),
-         !lemma %in% stop_words_azkaban,
-         lemma != "") |>
-  pull(lemma)
-```
+An interesting finding from at first glance is that in the book Hagrid is mentioned more than Professor Snape and Sirius Black (However it is worth noting that Sirius Black is referred to as 'Black' and 'Sirius', which might mean that his name is mentioned more than both Hagrid and Snape). This is interesting to those who are familiar with the movie. Professor Lupin, the lycanthrope, is central to the story. 
 
-### Word frequencies
-
-An interesting finding from at first glance is that in the book Hagrid is mentioned more than Professor Snape and Sirius Black. However, the script gave less mentions to Hagrid than those of Snape and Sirius Black.
+In the script, Hagrid is given less mentions compared to Snape and Sirius Black.
 
 ```{r}
 
-# for the book:
+# to see clearly the most frequent words
+clean_tokens_azkaban_book |> 
+  table() |>  
+  sort(decreasing = TRUE) |>  
+  head(50)  
 
-word_freq_df_azkaban_book <- as.data.frame(table(clean_tokens_azkaban_book))
-colnames(word_freq_df_azkaban_book) <- c("Word", "Frequency")
-word_freq_df_azkaban_book <- word_freq_df_azkaban_book[order(-word_freq_df_azkaban_book$Frequency), ]
-print(head(word_freq_df_azkaban_book, 100))
 
-# for the script:
-
-word_freq_df_azkaban_script <- as.data.frame(table(clean_tokens_azkaban_script))
-colnames(word_freq_df_azkaban_script) <- c("Word", "Frequency")
-word_freq_df_azkaban_script <- word_freq_df_azkaban_script[order(-word_freq_df_azkaban_script$Frequency), ]
-print(head(word_freq_df_azkaban_script, 100))
 ```
 
-### Word frequencies - but as percentages
 
-One thing we'd like to know is whether some characters are mentioned less in the script compared to the book. To do that, we should use a regularization.
+#### Term Frequencies - but as percentages
 
-#### The book
+One thing we'd like to know is whether some characters are mentioned less in the script compared to the book. 
 
-The book puts Harry, Ron, Hermione, Lupin, and even Hagrid, in the centre of the story in Azkaban, respectively. Professor Snape is also mentioned with a fair frequency, close to that of Hagrid. 
-
+The book puts Harry, Ron, Hermione, Lupin, Hagrid, and Sirius Black in the centre of the story in Azkaban. Professor Snape is also mentioned with a fair frequency, close to that of Hagrid. 
 
 ```{r}
-total_tokens_azkaban_book <- length(clean_tokens_azkaban_book)
-word_freq_df_azkaban_book <- as.data.frame(table(clean_tokens_azkaban_book))
-colnames(word_freq_df_azkaban_book) <- c("Word", "Frequency")
-word_freq_df_azkaban_book$Percentage <- (word_freq_df_azkaban_book$Frequency / total_tokens_azkaban_book) * 100
-word_freq_df_azkaban_book <- word_freq_df_azkaban_book[order(-word_freq_df_azkaban_book$Percentage), ]
-print(head(word_freq_df_azkaban_book, 100))
+# get word frequency table
+book_word_freq <- table(clean_tokens_azkaban_book)
+
+# convert to percentage
+word_freq_percent <- prop.table(book_word_freq) * 100
+
+# show top 50 most frequent words with percentages
+sort(word_freq_percent, decreasing = TRUE) |> head(50)
+
 ```
 
 
-#### The script
+
+### The script
 
 The script, on the other hand, keeps Harry, Ron, and Hermione central to the story, but mentioning Hermione more than Ron this time. It also mentions the word 'black', which is the last name of Sirius, more frequent than the book. However, the word 'black' can be used in other contexts as well. Hagrid falls behind Snape in the frequency of mentions in the movie script, showing that the movie gives more emphasis to Snape than Hagrid. Last but not least, Lupin becomes even more important for the story with a greater mention frequency (from 1.2% in the book to 1.57% (Lupin + LUPIN combined). 
 
 ```{r}
-total_tokens_azkaban_script <- length(clean_tokens_azkaban_script)
-word_freq_df_azkaban_script <- as.data.frame(table(clean_tokens_azkaban_script))
-colnames(word_freq_df_azkaban_script) <- c("Word", "Frequency")
-word_freq_df_azkaban_script$Percentage <- (word_freq_df_azkaban_script$Frequency / total_tokens_azkaban_script) * 100
-word_freq_df_azkaban_script <- word_freq_df_azkaban_script[order(-word_freq_df_azkaban_script$Percentage), ]
-print(head(word_freq_df_azkaban_script, 100))
+
+# annotate the script text with udpipe and convert to dataframe
+tokens_azkaban_script <- udpipe_annotate(ud_model, x = azkaban_script$text) |> 
+  as.data.frame()
+
+
+# getting the stopwords
+stop_words_script <- stopwords(source = "smart")
+
+
+# clean tokens by filtering out verbs, punctuation, pronouns, stopwords, and empty lemmas
+clean_tokens_azkaban_script <- tokens_azkaban_script |>
+  filter(upos != "VERB",  
+         upos != "PUNCT",  
+         upos != "PRON",   
+         !grepl("[[:punct:]]", lemma),  
+         !lemma %in% stop_words_script,  
+         lemma != "") |>  
+  pull(lemma)
+
+
+```
+
+#### Term frequencies - the script
+
+```{r}
+
+# get word frequencies for the cleaned script tokens
+script_word_freq <- table(clean_tokens_azkaban_script)
+
+# to percentage
+script_word_freq_percent <- prop.table(script_word_freq) * 100
+
+# show top 50 most frequent words with percentages
+sort(script_word_freq_percent, decreasing = TRUE) |> head(50)
+
 ```
 
 
+### Comparison - book vs script
 
-Compare: List top words and their counts for both texts.
+While Ron is mentioned more than Hermione in the book (~750 vs. ~500 times), he is mentioned less than her in the script (~230-240 vs. ~250 times). Similarly, Lupin has more mentions than Hagrid in the book (~400 vs. ~250), but in the script, their mentions are closer, with Lupin still ahead.
+
+Snape has around 250 mentions in the book, while Dumbledore has around 200 mentions. So, in the book, Snape is mentioned more frequently than Dumbledore. However, in the script, their mentions are closer, with Dumbledore at around 150 and Snape at around 200, meaning Dumbledore is mentioned a little less than Snape in the script.
+
+Sirius, despite being the least mentioned in the book (~250), retains a similar position in the script (~150), staying ahead of Dumbledore (~100) in the script but falling behind him in the book.
+
+To summarise:
+
+Amongst the most prominent characters in the Harry Potter Universe, 'Prisoner of the Azkaban' keeps Harry, Ron, and Hermione central to the story while changing the order in favour of Hermione against Ron. Lupin is the main supporting character for both book and script. Although a key character for the book, Hagrid loses his place to be the last in the script amongst all 8 characters, instead, Sirius Black becomes more important. For those who are familiar with the movie, this is an expected result since he had quite a lot of appearances throughout the movie. Snape and Dumbledore maintains their orders, however, Dumbledore is mentioned slightly more in the script compared to his mentions in the book. This also implies that Dumbledore becomes more influential for the movie, however not too much that it would change the order.
+```{r}
+# Update the list of characters to include Lupin
+characters <- c("Harry", "Hermione", "Ron", "Sirius", "Snape", "Hagrid", "Dumbledore", "Lupin")
+
+# Count mentions of each character in both the book and script
+book_characters <- clean_tokens_azkaban_book[clean_tokens_azkaban_book %in% characters]
+script_characters <- clean_tokens_azkaban_script[clean_tokens_azkaban_script %in% characters]
+
+# Create frequency tables
+book_character_freq <- table(book_characters)
+script_character_freq <- table(script_characters)
+
+# Combine data for plotting
+character_comparison_df <- data.frame(
+  character = rep(names(book_character_freq), 2),
+  frequency = c(as.vector(book_character_freq), as.vector(script_character_freq)),
+  version = rep(c("Book", "Script"), each = length(book_character_freq))
+)
+
+# Plot the comparison
+ggplot(character_comparison_df, aes(x = reorder(character, frequency), y = frequency, fill = version)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  coord_flip() +
+  labs(title = "Character Mentions in Book vs Script", x = "Character", y = "Frequency") +
+  scale_fill_manual(values = c("Book" = "#B40000", "Script" = "#0033A0"))  # Custom colors for Book and Script
+
+
+```
+
+
 
 
 
