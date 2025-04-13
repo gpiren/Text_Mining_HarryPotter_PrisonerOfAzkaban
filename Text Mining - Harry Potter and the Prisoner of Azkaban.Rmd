@@ -41,6 +41,8 @@ library(udpipe)
 library(stopwords)
 library(tidytext)
 library(ggplot2)
+library(syuzhet)
+
 ```
 
 
@@ -200,34 +202,147 @@ Sirius, despite being the least mentioned in the book (~250), retains a similar 
 To summarise:
 
 Amongst the most prominent characters in the Harry Potter Universe, 'Prisoner of the Azkaban' keeps Harry, Ron, and Hermione central to the story while changing the order in favour of Hermione against Ron. Lupin is the main supporting character for both book and script. Although a key character for the book, Hagrid loses his place to be the last in the script amongst all 8 characters, instead, Sirius Black becomes more important. For those who are familiar with the movie, this is an expected result since he had quite a lot of appearances throughout the movie. Snape and Dumbledore maintains their orders, however, Dumbledore is mentioned slightly more in the script compared to his mentions in the book. This also implies that Dumbledore becomes more influential for the movie, however not too much that it would change the order.
-```{r}
-# Update the list of characters to include Lupin
-characters <- c("Harry", "Hermione", "Ron", "Sirius", "Snape", "Hagrid", "Dumbledore", "Lupin")
 
-# Count mentions of each character in both the book and script
+```{r}
+# to compare main characters
+characters <- c("Harry", "Hermione", "Ron", "Sirius", "Snape", "Hagrid", "Dumbledore", "Lupin", "Pettigrew")
+
+#  mentions of each character in both the book and script
 book_characters <- clean_tokens_azkaban_book[clean_tokens_azkaban_book %in% characters]
 script_characters <- clean_tokens_azkaban_script[clean_tokens_azkaban_script %in% characters]
 
-# Create frequency tables
+# frequency tables
 book_character_freq <- table(book_characters)
 script_character_freq <- table(script_characters)
 
-# Combine data for plotting
+# combining data for plotting
 character_comparison_df <- data.frame(
   character = rep(names(book_character_freq), 2),
   frequency = c(as.vector(book_character_freq), as.vector(script_character_freq)),
   version = rep(c("Book", "Script"), each = length(book_character_freq))
 )
 
-# Plot the comparison
+# let's plot
+
 ggplot(character_comparison_df, aes(x = reorder(character, frequency), y = frequency, fill = version)) +
   geom_bar(stat = "identity", position = "dodge") +
   coord_flip() +
   labs(title = "Character Mentions in Book vs Script", x = "Character", y = "Frequency") +
-  scale_fill_manual(values = c("Book" = "#B40000", "Script" = "#0033A0"))  # Custom colors for Book and Script
+  scale_fill_manual(values = c("Book" = "#B40000", "Script" = "#0033A0"))  
 
 
 ```
+
+
+
+## Sentiment Analysis - book vs script
+
+The book:
+
+Harry - Ron - Hermione - Lupin - Hagrid - Snape - Dubmledore - Sirius - Pettigrew
+
+Negative - positive - fear - anger - sadness - trust - disgust - joy - surprise
+
+The script:
+Harry - Hermione - Ron - Lupin - Sirius - Snape - Dumbledore - Hagrid - Pettigrew
+
+Negative - positive - sadness - anger - trust - fear - disgust - joy - surprise
+
+### The book
+
+
+
+```{r}
+# get sentiment scores for the book
+book_sentiment <- get_nrc_sentiment(azkaban_book$text)  # Sentiment scores for the book
+
+# calculate overall sentiment for the book (sum of positive and negative scores)
+book_sentiment_score <- book_sentiment %>%
+  summarise(across(everything(), sum)) %>%
+  unlist()  # Convert the summary to a vector
+
+# create a data frame for the sentiment comparison
+sentiment_categories <- c("positive", "negative", "anger", "disgust", "fear", "joy", "sadness", "surprise", "trust")
+
+# Ensure the sentiment score vector has the correct length
+book_sentiment_score <- book_sentiment_score[sentiment_categories]  # Align to categories
+
+sentiment_comparison_df <- data.frame(
+  sentiment = sentiment_categories,
+  book_score = book_sentiment_score
+)
+
+# Sort the sentiment data in descending order
+sentiment_comparison_df <- sentiment_comparison_df %>%
+  arrange(desc(book_score))
+
+# plot sentiment analysis for the book
+ggplot(sentiment_comparison_df, aes(x = reorder(sentiment, book_score), y = book_score, fill = "Book")) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Sentiment Analysis for the Book", x = "Sentiment", y = "Score") +
+  scale_fill_manual(values = c("Book" = "#B40000")) +
+  theme_minimal() + 
+  coord_flip()
+
+
+```
+
+
+### The script
+
+
+
+```{r}
+# get sentiment scores for the script
+script_sentiment <- get_nrc_sentiment(azkaban_script_lines)  # Sentiment scores for the script
+
+# calculate overall sentiment for the script (sum of positive and negative scores)
+script_sentiment_score <- script_sentiment %>%
+  summarise(across(everything(), sum)) %>%
+  unlist()  # Convert the summary to a vector
+
+# create a data frame for the sentiment comparison
+script_sentiment_score <- script_sentiment_score[sentiment_categories]  # Align to categories
+
+sentiment_comparison_df_script <- data.frame(
+  sentiment = sentiment_categories,
+  script_score = script_sentiment_score
+)
+
+# Sort the sentiment data in descending order
+sentiment_comparison_df_script <- sentiment_comparison_df_script %>%
+  arrange(desc(script_score))
+
+# plot sentiment analysis for the script
+ggplot(sentiment_comparison_df_script, aes(x = reorder(sentiment, script_score), y = script_score, fill = "Script")) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Sentiment Analysis for the Script", x = "Sentiment", y = "Score") +
+  scale_fill_manual(values = c("Script" = "#0033A0")) +
+  theme_minimal() + 
+  coord_flip()
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
