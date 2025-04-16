@@ -42,7 +42,7 @@ library(stopwords)
 library(tidytext)
 library(ggplot2)
 library(syuzhet)
-
+library(treemapify)
 ```
 
 
@@ -215,20 +215,20 @@ script_characters <- clean_tokens_azkaban_script[clean_tokens_azkaban_script %in
 book_character_freq <- table(book_characters)
 script_character_freq <- table(script_characters)
 
-# combining data for plotting
-character_comparison_df <- data.frame(
-  character = rep(names(book_character_freq), 2),
-  frequency = c(as.vector(book_character_freq), as.vector(script_character_freq)),
-  version = rep(c("Book", "Script"), each = length(book_character_freq))
+# total frequency per character
+total_freq <- aggregate(frequency ~ character, data = character_comparison_df, sum)
+
+# reordering character factor based on total frequency
+character_comparison_df$character <- factor(
+  character_comparison_df$character,
+  levels = total_freq$character[order(-total_freq$frequency)]
 )
 
-# let's plot
-
-ggplot(character_comparison_df, aes(x = reorder(character, frequency), y = frequency, fill = version)) +
+# plot
+ggplot(character_comparison_df, aes(x = character, y = frequency, fill = version)) +
   geom_bar(stat = "identity", position = "dodge") +
-  coord_flip() +
   labs(title = "Character Mentions in Book vs Script", x = "Character", y = "Frequency") +
-  scale_fill_manual(values = c("Book" = "#B40000", "Script" = "#0033A0"))  
+  scale_fill_manual(values = c("Book" = "#B40000", "Script" = "#0033A0"))
 
 
 ```
@@ -248,8 +248,8 @@ Harry - Hermione - Ron - Lupin - Sirius - Snape - Dumbledore - Hagrid - Pettigre
 
 Negative - positive - sadness - anger - trust - fear - disgust - joy - surprise
 
-### The book
 
+### The book
 
 
 ```{r}
@@ -287,9 +287,97 @@ ggplot(sentiment_comparison_df, aes(x = reorder(sentiment, book_score), y = book
 
 ```
 
+## Character level Sentiment Distribution
+
+```{r}
+azkaban_characters <- c("Harry", "Ron", "Hermione", "Hagrid", "Dumbledore", 
+                        "Snape", "McGonagall", "Malfoy", "Neville", "Lupin", 
+                        "Pettigrew", "Black")
+
+```
+
+
+```{r}
+
+context_sentiment_df <- tokens_azkaban_book %>%
+  mutate(
+    is_character = token %in% azkaban_characters,
+    token_id = as.integer(token_id)
+  ) %>%
+  group_by(doc_id) %>%
+  mutate(character_token_id = ifelse(is_character, token_id, NA_integer_)) %>%
+  fill(character_token_id, .direction = "downup") %>%
+  filter(!is.na(character_token_id)) %>%
+  mutate(character_token_id = as.integer(character_token_id)) %>%
+  filter(abs(token_id - character_token_id) <= 5, !is_character) %>%
+  mutate(word = token) %>%
+  inner_join(get_sentiments("nrc"), by = "word") %>%
+  group_by(doc_id, character_token_id, sentiment) %>%
+  summarise(sentiment_count = n(), .groups = "drop")
+
+head(context_sentiment_df, 20)
+
+```
+
+
+```{r}
+
+# Map `character_token_id` back to character names and summarize the sentiment for each character
+context_sentiment_df <- context_sentiment_df %>%
+  mutate(character = case_when(
+    character_token_id == 1 ~ "Harry",
+    character_token_id == 2 ~ "Ron",
+    character_token_id == 3 ~ "Hermione",
+    character_token_id == 4 ~ "Lupin",
+    character_token_id == 5 ~ "Black",
+    character_token_id == 6 ~ "Hagrid",
+    character_token_id == 7 ~ "Snape",
+    character_token_id == 8 ~ "Dumbledore",
+    character_token_id == 9 ~ "Neville",
+    character_token_id == 10 ~ "Pettigrew",
+    TRUE ~ "Unknown"
+  ))
+
+# Summarize the sentiment counts by character
+character_sentiment_summary <- context_sentiment_df %>%
+  group_by(character, sentiment) %>%
+  summarise(sentiment_count = sum(sentiment_count), .groups = "drop")
+
+# View the summarized result
+head(character_sentiment_summary, 20)
+
+
+```
+
+
+
+```{r}
+
+# Exclude 'Unknown' sentiment
+filtered_sentiment_df <- character_sentiment_summary %>%
+  filter(character != "Unknown")
+
+# Create a treemap for sentiment distribution by character, excluding 'Unknown'
+ggplot(filtered_sentiment_df, aes(area = sentiment_count, fill = sentiment, label = sentiment)) +
+  geom_treemap() +
+  geom_treemap_text(colour = "black", place = "centre", grow = TRUE, reflow = TRUE) +
+  facet_wrap(~character, scales = "free") +
+  scale_fill_brewer(palette = "Set3") +
+  labs(title = "Character-Level Sentiment Distribution",
+       subtitle = "Treemap visualization of emotional tones for each character",
+       fill = "Sentiment") +
+  theme_minimal(base_family = "serif") +
+  theme(
+    strip.text = element_text(face = "bold", size = 12),
+    plot.title = element_text(face = "bold", size = 18),
+    plot.subtitle = element_text(size = 14)
+  )
+
+```
+
+
 
 ### The script
-
 
 
 ```{r}
@@ -324,8 +412,31 @@ ggplot(sentiment_comparison_df_script, aes(x = reorder(sentiment, script_score),
 ```
 
 
+#### Character sentiments - the script
+
+```{r}
+# Check for tokens that are fully capitalized, including possible punctuation
+filter(filtered_tokens_script, grepl("^[A-Z]+[[:punct:]]*$", token)) %>% head()
+
+# Check if token_id has been converted to numeric
+head(filtered_tokens_script, 100)
+
+```
 
 
+```{r}
+
+
+```
+
+
+## Emotional arc of the book and the movie, how emotions change over the course of both documents
+
+## Bigrams 
+
+top20 
+
+## Character co-occurrence network 
 
 
 
