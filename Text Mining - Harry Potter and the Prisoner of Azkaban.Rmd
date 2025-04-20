@@ -8,31 +8,11 @@ date: "2025-04-05"
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-
-**Potential Problems with the Script and Solutions**
-
-**Problem:**
-
-Mixed Narrative and Dialogue - The script contains scene descriptions (e.g., "The street slumbers") alongside dialogue (e.g., "Lumos Maxima"), which could complicate isolating dialogue or sentiment.
-
-**Solution:** Use text patterns (e.g., character names in all caps followed by lines) to separate dialogue from narrative.
-
-**Problem:** Limited Context - Scripts are shorter and less descriptive than books, potentially skewing sentiment or n-gram results due to fewer words.
-
-**Solution:** Normalize results (e.g., frequencies per 1000 words) to account for length differences.
-
-**Problem:** Stage Directions - Actions like "The tent BLOOMS SOFTLY" may interfere with word frequency or sentiment analysis if not filtered out.
-
-**Solution:** Preprocess to exclude text within parentheses or italicized directions (if formatted consistently).
-
-**Problem:** Character Identification - While your script labels speakers (e.g., "HARRY"), mentions of characters within dialogue or narrative may be harder to extract accurately.
-
-**Solution:** Use named entity recognition (NER) or manual tagging to identify character mentions.
-
 ## Libraries
 
 ```{r message=FALSE, warning=FALSE}
 library(tidyverse)
+library(stringr)
 library(dplyr)
 library(readr)
 library(tm)
@@ -43,7 +23,30 @@ library(tidytext)
 library(ggplot2)
 library(syuzhet)
 library(treemapify)
+library(scales)
+library(widyr)
+library(igraph)
+library(ggraph)
 ```
+
+
+As a result of the draw we made as a group, I will represent the Hufflepuff House from the Harry Potter Universe. For future use, let's set our colour palette.
+
+```{r}
+hufflepuff_palette <- c(
+  "#FFC107",
+  "#D2691E",
+  "#C19A6B",
+  "#F5DEB3",
+  "#FFA500",
+  "#FFD54F",
+  "#A0522D",
+  "#5C2E0D",
+  "#DEB887",
+  "#FFECB3"
+)
+```
+
 
 
 ## Reading the book and script
@@ -61,7 +64,7 @@ azkaban_script <- tibble(text = str_split(azkaban_script, pattern = "\n") |> unl
 
 ```
 
-**For a comprehensive stopword removing**
+For a comprehensive stopword removing:
 
 ```{r message=FALSE, warning=FALSE}
 ud_model <- udpipe_download_model(language = "english")
@@ -111,7 +114,7 @@ clean_tokens_azkaban_book <- tokens_azkaban_book |>
 
 #### Term Frequencies
 
-An interesting finding from at first glance is that in the book Hagrid is mentioned more than Professor Snape and Sirius Black (However it is worth noting that Sirius Black is referred to as 'Black' and 'Sirius', which might mean that his name is mentioned more than both Hagrid and Snape). This is interesting to those who are familiar with the movie. Professor Lupin, the lycanthrope, is central to the story. 
+An interesting finding at first glance is that in the book Hagrid is mentioned more than Professor Snape and Sirius Black (However it is worth noting that Sirius Black is referred to as 'Black' and 'Sirius', which might mean that his name is mentioned more than both Hagrid and Snape). This is interesting to those who are familiar with the movie. Professor Lupin, the lycanthrope, is central to the story. 
 
 In the script, Hagrid is given less mentions compared to Snape and Sirius Black.
 
@@ -149,7 +152,7 @@ sort(word_freq_percent, decreasing = TRUE) |> head(50)
 
 ### The script
 
-The script, on the other hand, keeps Harry, Ron, and Hermione central to the story, but mentioning Hermione more than Ron this time. It also mentions the word 'black', which is the last name of Sirius, more frequent than the book. However, the word 'black' can be used in other contexts as well. Hagrid falls behind Snape in the frequency of mentions in the movie script, showing that the movie gives more emphasis to Snape than Hagrid. Last but not least, Lupin becomes even more important for the story with a greater mention frequency (from 1.2% in the book to 1.57% (Lupin + LUPIN combined). 
+The script, on the other hand, keeps Harry, Ron, and Hermione central to the story, but mentioning Hermione more than Ron. It also mentions the word 'black', which is the last name of Sirius, more frequent than the book. However, the word 'black' can be used in other contexts as well. Hagrid falls behind Snape in the frequency of mentions in the movie script, showing that the movie gives more emphasis to Snape than Hagrid. Last but not least, Lupin becomes even more important for the story with a greater mention frequency (from 1.2% in the book to 1.57% (Lupin + LUPIN combined). 
 
 ```{r}
 
@@ -215,6 +218,16 @@ script_characters <- clean_tokens_azkaban_script[clean_tokens_azkaban_script %in
 book_character_freq <- table(book_characters)
 script_character_freq <- table(script_characters)
 
+# a comparison data frame
+character_comparison_df <- data.frame(
+  character = rep(characters, times = 2),
+  source = rep(c("Book", "Script"), each = length(characters)),
+  frequency = c(
+    as.integer(book_character_freq[characters]),
+    as.integer(script_character_freq[characters])
+  )
+)
+
 # total frequency per character
 total_freq <- aggregate(frequency ~ character, data = character_comparison_df, sum)
 
@@ -225,10 +238,10 @@ character_comparison_df$character <- factor(
 )
 
 # plot
-ggplot(character_comparison_df, aes(x = character, y = frequency, fill = version)) +
+ggplot(character_comparison_df, aes(x = character, y = frequency, fill = source)) +
   geom_bar(stat = "identity", position = "dodge") +
   labs(title = "Character Mentions in Book vs Script", x = "Character", y = "Frequency") +
-  scale_fill_manual(values = c("Book" = "#B40000", "Script" = "#0033A0"))
+  scale_fill_manual(values = c("Book" = "#FFC107", "Script" = "#8B4513"))
 
 
 ```
@@ -237,24 +250,26 @@ ggplot(character_comparison_df, aes(x = character, y = frequency, fill = version
 
 ## Sentiment Analysis - book vs script
 
-The book:
+In this section, we will conduct a sentiment analysis on the book and script in general, as well as a sentiment analysis of the characters from both texts. 
 
-Harry - Ron - Hermione - Lupin - Hagrid - Snape - Dubmledore - Sirius - Pettigrew
+For a quick overview of the sentiments in the book and script, ordered:
+
+**The book:**
 
 Negative - positive - fear - anger - sadness - trust - disgust - joy - surprise
 
-The script:
-Harry - Hermione - Ron - Lupin - Sirius - Snape - Dumbledore - Hagrid - Pettigrew
+**The script:**
 
 Negative - positive - sadness - anger - trust - fear - disgust - joy - surprise
 
 
 ### The book
 
+The book carries mostly negative sentiments. To go into detail, the atmosphere in the book is marked by fear, anger, and sadness sentiments. Trust, joy, and surprise fall behind those negative sentiments, giving us hints about the overall climate.
 
 ```{r}
 # get sentiment scores for the book
-book_sentiment <- get_nrc_sentiment(azkaban_book$text)  # Sentiment scores for the book
+book_sentiment <- get_nrc_sentiment(azkaban_book$text) 
 
 # calculate overall sentiment for the book (sum of positive and negative scores)
 book_sentiment_score <- book_sentiment %>%
@@ -264,15 +279,15 @@ book_sentiment_score <- book_sentiment %>%
 # create a data frame for the sentiment comparison
 sentiment_categories <- c("positive", "negative", "anger", "disgust", "fear", "joy", "sadness", "surprise", "trust")
 
-# Ensure the sentiment score vector has the correct length
-book_sentiment_score <- book_sentiment_score[sentiment_categories]  # Align to categories
+# ensuring the sentiment score vector has the correct length
+book_sentiment_score <- book_sentiment_score[sentiment_categories]
 
 sentiment_comparison_df <- data.frame(
   sentiment = sentiment_categories,
   book_score = book_sentiment_score
 )
 
-# Sort the sentiment data in descending order
+# the sentiment data in descending order
 sentiment_comparison_df <- sentiment_comparison_df %>%
   arrange(desc(book_score))
 
@@ -280,22 +295,15 @@ sentiment_comparison_df <- sentiment_comparison_df %>%
 ggplot(sentiment_comparison_df, aes(x = reorder(sentiment, book_score), y = book_score, fill = "Book")) +
   geom_bar(stat = "identity", position = "dodge") +
   labs(title = "Sentiment Analysis for the Book", x = "Sentiment", y = "Score") +
-  scale_fill_manual(values = c("Book" = "#B40000")) +
+  scale_fill_manual(values = c("Book" = "#F5DEB3")) +
   theme_minimal() + 
   coord_flip()
 
 
 ```
 
-## Character level Sentiment Distribution
 
-```{r}
-azkaban_characters <- c("Harry", "Ron", "Hermione", "Hagrid", "Dumbledore", 
-                        "Snape", "McGonagall", "Malfoy", "Neville", "Lupin", 
-                        "Pettigrew", "Black")
-
-```
-
+### Sentiment analysis for characters - book
 
 ```{r}
 
@@ -320,49 +328,70 @@ head(context_sentiment_df, 20)
 ```
 
 
+Let's map `character_token_id` back to character names and summarize the sentiment for each character.
+
 ```{r}
 
-# Map `character_token_id` back to character names and summarize the sentiment for each character
 context_sentiment_df <- context_sentiment_df %>%
   mutate(character = case_when(
     character_token_id == 1 ~ "Harry",
     character_token_id == 2 ~ "Ron",
     character_token_id == 3 ~ "Hermione",
-    character_token_id == 4 ~ "Lupin",
-    character_token_id == 5 ~ "Black",
-    character_token_id == 6 ~ "Hagrid",
-    character_token_id == 7 ~ "Snape",
-    character_token_id == 8 ~ "Dumbledore",
+    character_token_id == 4 ~ "Hagrid",
+    character_token_id == 5 ~ "Dumbledore",
+    character_token_id == 6 ~ "Snape",
+    character_token_id == 7 ~ "McGonagall",
+    character_token_id == 8 ~ "Malfoy",
     character_token_id == 9 ~ "Neville",
-    character_token_id == 10 ~ "Pettigrew",
+    character_token_id == 10 ~ "Lupin",
+    character_token_id == 11 ~ "Pettigrew",
+    character_token_id == 12 ~ "Black",
     TRUE ~ "Unknown"
   ))
 
-# Summarize the sentiment counts by character
+# summing the sentiment counts by character
 character_sentiment_summary <- context_sentiment_df %>%
   group_by(character, sentiment) %>%
   summarise(sentiment_count = sum(sentiment_count), .groups = "drop")
 
-# View the summarized result
 head(character_sentiment_summary, 20)
+
 
 
 ```
 
 
 
+# Character level Sentiment Distribution
+
+Picking the characters we want to see. This list will be used later for the script as well.
+
+```{r}
+azkaban_characters <- c("Harry", "Ron", "Hermione", "Hagrid", "Dumbledore", 
+                        "Snape", "McGonagall", "Malfoy", "Neville", "Lupin", 
+                        "Pettigrew", "Black")
+
+```
+
+
+The most prominent sentiment for almost all characters is fear. This is in line with the previous findings when we were conducting sentiment analysis on the book in general. The book carries a lot of fear, and for most fans, this is not a surprise because the Azkaban is one of the darkest, most thrilling and mysterious book from the series. 
+
+An exception to that is Hagrid. He is associated with the trust sentiment the most across the book. This is also not a surprise, for he is a trustee and safe haven for Harry and other kids from Hogwarts. 
+
+All in all, the book mostly demonstrates negative sentiments such as fear, anger, disgust, and sadness.
+
 ```{r}
 
-# Exclude 'Unknown' sentiment
+# we were getting an 'Unknown' sentiment. let's exclude that
 filtered_sentiment_df <- character_sentiment_summary %>%
   filter(character != "Unknown")
 
-# Create a treemap for sentiment distribution by character, excluding 'Unknown'
+# the treemap with the custom Hufflepuff palette
 ggplot(filtered_sentiment_df, aes(area = sentiment_count, fill = sentiment, label = sentiment)) +
   geom_treemap() +
   geom_treemap_text(colour = "black", place = "centre", grow = TRUE, reflow = TRUE) +
   facet_wrap(~character, scales = "free") +
-  scale_fill_brewer(palette = "Set3") +
+  scale_fill_manual(values = hufflepuff_palette) +  # for the hufflepuff palette
   labs(title = "Character-Level Sentiment Distribution",
        subtitle = "Treemap visualization of emotional tones for each character",
        fill = "Sentiment") +
@@ -376,13 +405,12 @@ ggplot(filtered_sentiment_df, aes(area = sentiment_count, fill = sentiment, labe
 ```
 
 
-
 ### The script
 
 
 ```{r}
 # get sentiment scores for the script
-script_sentiment <- get_nrc_sentiment(azkaban_script_lines)  # Sentiment scores for the script
+script_sentiment <- get_nrc_sentiment(azkaban_script$text)
 
 # calculate overall sentiment for the script (sum of positive and negative scores)
 script_sentiment_score <- script_sentiment %>%
@@ -397,15 +425,15 @@ sentiment_comparison_df_script <- data.frame(
   script_score = script_sentiment_score
 )
 
-# Sort the sentiment data in descending order
+# sentiment data in descending order
 sentiment_comparison_df_script <- sentiment_comparison_df_script %>%
   arrange(desc(script_score))
 
-# plot sentiment analysis for the script
+# plot 
 ggplot(sentiment_comparison_df_script, aes(x = reorder(sentiment, script_score), y = script_score, fill = "Script")) +
   geom_bar(stat = "identity", position = "dodge") +
   labs(title = "Sentiment Analysis for the Script", x = "Sentiment", y = "Score") +
-  scale_fill_manual(values = c("Script" = "#0033A0")) +
+  scale_fill_manual(values = c("Script" = "#D2691E")) +
   theme_minimal() + 
   coord_flip()
 
@@ -414,33 +442,263 @@ ggplot(sentiment_comparison_df_script, aes(x = reorder(sentiment, script_score),
 
 #### Character sentiments - the script
 
-```{r}
-# Check for tokens that are fully capitalized, including possible punctuation
-filter(filtered_tokens_script, grepl("^[A-Z]+[[:punct:]]*$", token)) %>% head()
+```{r warning=FALSE}
 
-# Check if token_id has been converted to numeric
-head(filtered_tokens_script, 100)
+context_sentiment_script <- tokens_azkaban_script %>%
+  mutate(
+    is_character = token %in% azkaban_characters,
+    token_id = as.integer(token_id)
+  ) %>%
+  group_by(doc_id) %>%
+  mutate(character_token_id = ifelse(is_character, token_id, NA_integer_)) %>%
+  fill(character_token_id, .direction = "downup") %>%
+  filter(!is.na(character_token_id)) %>%
+  mutate(character_token_id = as.integer(character_token_id)) %>%
+  filter(abs(token_id - character_token_id) <= 5, !is_character) %>%
+  mutate(word = token) %>%
+  inner_join(get_sentiments("nrc"), by = "word") %>%
+  group_by(doc_id, character_token_id, sentiment) %>%
+  summarise(sentiment_count = n(), .groups = "drop")
 
 ```
 
 
 ```{r}
+# character mentions and their token ids
+character_mentions_script <- tokens_azkaban_script %>%
+  filter(token %in% azkaban_characters) %>%
+  mutate(token_id = as.integer(token_id)) %>%
+  select(doc_id, token_id, character = token)
+
+# character names based on token_id
+context_sentiment_script <- context_sentiment_script %>%
+  left_join(character_mentions_script, 
+            by = c("doc_id", "character_token_id" = "token_id"))
+
+# sentiment counts per character
+character_sentiment_summary_script <- context_sentiment_script %>%
+  group_by(character, sentiment) %>%
+  summarise(sentiment_count = sum(sentiment_count), .groups = "drop")
 
 
 ```
 
+
+Results highlight a strong presence of negative emotions, with "negative" being the most dominant, followed closely by sadness and anger. 
+
+This mirrors the book's overall tone, which is strong in negative sentiments like fear, anger, and sadness, reflecting the dark, thrilling, and mysterious nature of the story. However, while the book emphasizes fear as the primary emotion across most characters, the movie script broadens this into a more general "negative" sentiment, slightly downplaying the specific intensity of fear.
+
+Additionally, the movie script shows less focus on trust compared to the book, where Hagrid stands out as a beacon of trust and safety for Harry and others. Both the movie and book maintain a dark emotional landscape, but the movie shifts away from fear as the central emotion, opting for a wider negative tone
+
+
+```{r}
+# excluding unknown or NA characters if any
+filtered_sentiment_script <- character_sentiment_summary_script %>%
+  filter(!is.na(character))
+
+
+# treemap plot for script
+ggplot(filtered_sentiment_script, aes(area = sentiment_count, fill = sentiment, label = sentiment)) +
+  geom_treemap() +
+  geom_treemap_text(colour = "black", place = "centre", grow = TRUE, reflow = TRUE) +
+  facet_wrap(~character, scales = "free") +
+  scale_fill_manual(values = hufflepuff_palette) +
+  labs(title = "Character-Level Sentiment Distribution (Script)",
+       subtitle = "Treemap visualization of emotional tones around each character mention",
+       fill = "Sentiment") +
+  theme_minimal(base_family = "serif") +
+  theme(
+    strip.text = element_text(face = "bold", size = 12),
+    plot.title = element_text(face = "bold", size = 18),
+    plot.subtitle = element_text(size = 14)
+  )
+```
 
 ## Emotional arc of the book and the movie, how emotions change over the course of both documents
 
+Below chunk divides the book and script into 100 equal segments based on token position and assigns a segment ID to each token. It then joins NRC sentiment labels to the tokens, and counts how many times each sentiment appears in each segment. This will help us understand the course of the book and script, and see which sentiments appear as the story progresses.
+
+```{r warning=FALSE}
+
+n_segments <- 100
+
+emotional_arc_book <- tokens_azkaban_book %>%
+  mutate(segment = ntile(as.integer(token_id), n_segments)) %>%
+  inner_join(get_sentiments("nrc"), by = c("token" = "word")) %>%
+  count(segment, sentiment)
+
+emotional_arc_script <- tokens_azkaban_script %>%
+  mutate(segment = ntile(as.integer(token_id), n_segments)) %>%
+  inner_join(get_sentiments("nrc"), by = c("token" = "word")) %>%
+  count(segment, sentiment)
+
+# emotional arcs for both texts
+
+emotional_arc_book$source <- "Book"
+emotional_arc_script$source <- "Script"
+
+# combining 
+emotional_arc_combined <- bind_rows(emotional_arc_book, emotional_arc_script)
+```
+
+
+Below is the plot for the emotional arc progression comparison for the book and script across sentiments.
+
+```{r}
+
+ggplot(emotional_arc_combined, aes(x = segment, y = n, color = source)) +
+  geom_line(size = 1, alpha = 0.8) +
+  facet_wrap(~sentiment, scales = "free_y") +
+  scale_color_manual(values = c("Book" = "#FFC107", "Script" = "#8B4513")) +
+  scale_x_continuous(labels = percent_format(scale = 1)) +
+  labs(
+    title = "Emotional Arc Progression: Book vs Script",
+    subtitle = "Comparing NRC sentiment flow across the narrative",
+    x = "Narrative Progress (%)",
+    y = "Sentiment Count",
+    color = "Source"
+  ) +
+  theme_minimal(base_family = "serif") +
+  theme(
+    plot.title = element_text(size = 18, face = "bold"),
+    plot.subtitle = element_text(size = 14),
+    strip.text = element_text(face = "bold"),
+    legend.position = "top"
+  )
+
+```
+
+
+
 ## Bigrams 
 
-top20 
+We want to see the most frequent 20 bigrams from the book and script.
+
+The bigram analysis for the "Harry Potter and the Prisoner of Azkaban" movie script highlights key themes and character focuses. "Professor Lupin" and "Sirius Black" stand out as the most frequent bigrams, indicating their central roles in the movie’s narrative, which aligns with their importance in the story as Harry’s allies and key figures in the plot surrounding Azkaban. Other character pairs like "Uncle Vernon," "Cornelius Fudge," "Aunt Marge," "Professor Trelawney," and "Professor McGonagall" reflect the script’s emphasis on authority figures and family dynamics, both at Hogwarts and in the Muggle world. Location-based bigrams like "Hogwarts Castle," "Ext Hogwarts," "Hagrid’s Hut," and "Whomping Willow" underscore the significance of the Hogwarts setting and its magical elements in driving the story.
+
+
+
+```{r}
+
+# bigrams for book
+azkaban_book_bigrams <- tibble(text = as.character(azkaban_book)) %>%
+  unnest_tokens(bigram, text, token = "ngrams", n = 2)
+
+# bigrams for script
+azkaban_script_bigrams <- tibble(text = as.character(azkaban_script$text)) %>%
+  unnest_tokens(bigram, text, token = "ngrams", n = 2)
+
+# separate bigrams into two words
+azkaban_book_bigrams_sep <- azkaban_book_bigrams %>%
+  separate(bigram, into = c("word1", "word2"), sep = " ")
+
+azkaban_script_bigrams_sep <- azkaban_script_bigrams %>%
+  separate(bigram, into = c("word1", "word2"), sep = " ")
+
+# removing stopwords
+azkaban_book_bigrams_clean <- azkaban_book_bigrams_sep %>%
+  filter(!word1 %in% stop_words$word,
+         !word2 %in% stop_words$word,
+         !is.na(word1), !is.na(word2)) %>%
+  unite(bigram, word1, word2, sep = " ")
+
+azkaban_script_bigrams_clean <- azkaban_script_bigrams_sep %>%
+  filter(!word1 %in% stop_words$word,
+         !word2 %in% stop_words$word,
+         !is.na(word1), !is.na(word2)) %>%
+  unite(bigram, word1, word2, sep = " ")
+
+
+# top 20 bigrams for book
+azkaban_book_bigrams_clean %>%
+  count(bigram, sort = TRUE) %>%
+  slice_max(order_by = n, n = 20) %>%
+  ggplot(aes(x = reorder(bigram, n), y = n)) +
+  geom_col(fill = "#D2691E") +  
+  coord_flip() +
+  labs(title = "Top 20 Bigrams in Book (Cleaned)",
+       x = "Bigram", y = "Frequency") +
+  theme_minimal(base_family = "serif") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+
+# top 20 bigrams for script
+azkaban_script_bigrams_clean %>%
+  count(bigram, sort = TRUE) %>%
+  slice_max(order_by = n, n = 20) %>%
+  ggplot(aes(x = reorder(bigram, n), y = n)) +
+  geom_col(fill = "#C19A6B") +  
+  coord_flip() +
+  labs(title = "Top 20 Bigrams in Movie (Cleaned)",
+       x = "Bigram", y = "Frequency") +
+  theme_minimal(base_family = "serif") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
 
 ## Character co-occurrence network 
 
 
+The co-occurrence network for the book shows that Harry has the strongest connections with Ron and Hermione, indicating they are his closest companions in the story. Hermione and Ron also share a significant bond. Other notable relationships include Harry with Sirius Black, Hagrid, Lupin, Malfoy, and Snape, reflecting key interactions with these characters. Black and Ron, as well as Lupin and Ron, also have meaningful connections, suggesting their roles in the narrative intersect with Ron's storyline.
 
 
+As for the movie script, results highlight Harry’s strongest ties with Hermione, followed closely by Ron, reflecting their central trio dynamic. Hermione and Ron also share a significant connection. Harry has notable interactions with Lupin, Sirius Black, Hagrid, Snape, and Pettigrew, emphasizing their key roles in the story. Black and Lupin, as well as Black and Ron, have meaningful connections, underscoring their shared narrative arcs. Additionally, Lupin and Pettigrew, Hagrid with Ron and Hermione, and Dumbledore with Harry show important but less frequent interactions.
+
+To compare, we can say that Harry and Ron have the strongest bond, while the movie prioritizes Harry and Hermione. Hermione and Ron’s connection is more prominent in the film. The book includes Harry and Malfoy, but the movie omits this, instead highlighting new pairs like Lupin and Pettigrew, Harry and Pettigrew, Hagrid with Ron and Hermione, and Dumbledore with Harry. The film focuses more on the central trio, while the book spreads interactions across a wider cast.
+
+  
+```{r}
+
+# define characters of interest
+character_list <- c("Harry", "Ron", "Hermione", "Hagrid", "Dumbledore",
+                    "Snape", "McGonagall", "Malfoy", "Neville", "Lupin",
+                    "Pettigrew", "Black")
+
+# break book into smaller chunks (e.g., sentences)
+azkaban_book_sentences <- unlist(str_split(azkaban_book, "(?<=[.!?])\\s+"))
+
+# helper to extract character co-occurrence pairs
+detect_character_pairs <- function(text_data, source_label) {
+  tibble(text = text_data, source = source_label) %>%
+    mutate(id = row_number(),
+           text_lower = str_to_lower(text),
+           characters = map(text_lower, ~ character_list[str_detect(., str_to_lower(character_list))])) %>%
+    filter(map_int(characters, length) > 1) %>%
+    mutate(pairs = map(characters, ~ combn(sort(.x), 2, simplify = FALSE))) %>%
+    unnest(pairs) %>%
+    mutate(item1 = map_chr(pairs, 1),
+           item2 = map_chr(pairs, 2)) %>%
+    count(item1, item2, sort = TRUE)
+}
+
+# apply function to split book and script
+co_occurrence_book <- detect_character_pairs(azkaban_book_sentences, "book")
+co_occurrence_script <- detect_character_pairs(azkaban_script$text, "script")
+
+# plot for book
+co_occurrence_book %>%
+  slice_max(n, n = 10) %>%
+  mutate(pair = paste(item1, "&", item2)) %>%
+  ggplot(aes(x = reorder(pair, n), y = n)) +
+  geom_col(fill = "#B40000") +
+  coord_flip() +
+  labs(title = "Top Character Co-occurrences in Book",
+       x = "Character Pair", y = "Co-occurrence Count") +
+  theme_minimal(base_family = "serif") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+
+# plot for script
+co_occurrence_script %>%
+  slice_max(n, n = 10) %>%
+  mutate(pair = paste(item1, "&", item2)) %>%
+  ggplot(aes(x = reorder(pair, n), y = n)) +
+  geom_col(fill = "#0033A0") +
+  coord_flip() +
+  labs(title = "Top Character Co-occurrences in Script",
+       x = "Character Pair", y = "Co-occurrence Count") +
+  theme_minimal(base_family = "serif") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+
+
+```
 
 
 
