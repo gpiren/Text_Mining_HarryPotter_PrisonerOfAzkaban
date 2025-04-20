@@ -305,6 +305,17 @@ ggplot(sentiment_comparison_df, aes(x = reorder(sentiment, book_score), y = book
 
 ### Sentiment analysis for characters - book
 
+Picking the characters we want to see. This list will be used later for the script as well.
+
+```{r}
+azkaban_characters <- c("Harry", "Ron", "Hermione", "Hagrid", "Dumbledore", 
+                        "Snape", "McGonagall", "Malfoy", "Neville", "Lupin", 
+                        "Pettigrew", "Black")
+
+```
+
+
+
 ```{r}
 
 context_sentiment_df <- tokens_azkaban_book %>%
@@ -363,15 +374,6 @@ head(character_sentiment_summary, 20)
 
 
 # Character level Sentiment Distribution
-
-Picking the characters we want to see. This list will be used later for the script as well.
-
-```{r}
-azkaban_characters <- c("Harry", "Ron", "Hermione", "Hagrid", "Dumbledore", 
-                        "Snape", "McGonagall", "Malfoy", "Neville", "Lupin", 
-                        "Pettigrew", "Black")
-
-```
 
 
 The most prominent sentiment for almost all characters is fear. This is in line with the previous findings when we were conducting sentiment analysis on the book in general. The book carries a lot of fear, and for most fans, this is not a surprise because the Azkaban is one of the darkest, most thrilling and mysterious book from the series. 
@@ -614,7 +616,7 @@ azkaban_book_bigrams_clean %>%
   count(bigram, sort = TRUE) %>%
   slice_max(order_by = n, n = 20) %>%
   ggplot(aes(x = reorder(bigram, n), y = n)) +
-  geom_col(fill = "#D2691E") +  
+  geom_col(fill = "#FFD54F") +  
   coord_flip() +
   labs(title = "Top 20 Bigrams in Book (Cleaned)",
        x = "Bigram", y = "Frequency") +
@@ -678,7 +680,7 @@ co_occurrence_book %>%
   slice_max(n, n = 10) %>%
   mutate(pair = paste(item1, "&", item2)) %>%
   ggplot(aes(x = reorder(pair, n), y = n)) +
-  geom_col(fill = "#B40000") +
+  geom_col(fill = "#5C2E0D") +
   coord_flip() +
   labs(title = "Top Character Co-occurrences in Book",
        x = "Character Pair", y = "Co-occurrence Count") +
@@ -690,7 +692,7 @@ co_occurrence_script %>%
   slice_max(n, n = 10) %>%
   mutate(pair = paste(item1, "&", item2)) %>%
   ggplot(aes(x = reorder(pair, n), y = n)) +
-  geom_col(fill = "#0033A0") +
+  geom_col(fill = "#DEB887") +
   coord_flip() +
   labs(title = "Top Character Co-occurrences in Script",
        x = "Character Pair", y = "Co-occurrence Count") +
@@ -707,6 +709,7 @@ co_occurrence_script %>%
 
 
 
+  
 
 
 
